@@ -1,6 +1,6 @@
 {
   "name": "security-auditor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Register machines and run repeatable Codex-assisted security audits over SSH, with deterministic runtime, dependency, and persistence evidence.",
   "author": {
     "name": "Daniel Rosehill",
@@ -37,6 +37,8 @@
       "Audit a registered machine."
     ],
     "brandColor": "#991B1B",
+    "composerIcon": "./assets/security-auditor.svg",
+    "logo": "./assets/security-auditor.svg",
     "screenshots": []
   }
 }
