@@ -5,7 +5,7 @@ description: Use when the user wants to run a security audit on a registered mac
 
 # Audit Machine
 
-Execute a security audit over SSH on a single registered machine. The audit checks for configuration drift, hardening gaps, policy compliance, and other findings. Output is timestamped and appended to the machine's audit log.
+Execute a security audit over SSH on a single registered machine. The audit checks for configuration drift, hardening gaps, policy compliance, application runtime exposure, package advisories, suspicious processes, outbound sessions, and persistence indicators. Output is timestamped and appended to the machine's audit log.
 
 ## When to use
 
@@ -43,9 +43,9 @@ Execute a security audit over SSH on a single registered machine. The audit chec
    bash scripts/audit-machine.sh <machine_name> [--quick|--full|--report-only]
    ```
 
-4. The script runs over SSH, writes `reports/<timestamp>/audit-report.md`, and updates `audit-log.json`.
+4. The script runs over SSH, writes `reports/<timestamp>/audit-report.md`, and updates `audit-log.json`. It always runs the deterministic Linux collector in `scripts/collect-linux-audit.sh`; when remote Claude Code is available, the collector is appended as evidence after the AI-generated report.
 
-5. Extract the report path from the output and read the markdown for a brief summary. Display path and key findings to the user.
+5. Extract the report path from the output and read the markdown for a brief summary. Treat these as urgent when present: public dev listeners, `next dev`/Vite/webpack/debug servers on `0.0.0.0` or `[::]`, root-owned web runtimes, high/critical `npm audit` advisories, deleted executables, `/tmp` or `/dev/shm` processes, and suspicious outbound sessions. Display path and key findings to the user.
 
 ## Output / side effects
 
@@ -56,5 +56,5 @@ Execute a security audit over SSH on a single registered machine. The audit chec
 ## Safety / constraints
 
 - Audit may require root privileges on the target for comprehensive checks.
-- Network latency can affect runtime; full audits may take 10+ minutes on slow links.
+- Network latency and `npm audit` can affect runtime; full audits may take 10+ minutes on slow links or large Node fleets.
 - The script reads system files on the target; ensure proper credentials and permissions.

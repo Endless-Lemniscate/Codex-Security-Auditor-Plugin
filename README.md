@@ -8,6 +8,7 @@ The plugin manages a fleet of machines and runs repeatable security audits over 
 
 - Register machines with structured profiles: SSH address, OS, privilege level, purpose, and machine type.
 - Run security audits over SSH using Claude Code on the remote machine when present, or fall back to direct shell checks.
+- Always append deterministic SSH evidence for runtime exposure, dependency advisories, suspicious processes, outbound sessions, and persistence indicators.
 - Persist timestamped audit reports per machine.
 - Diff successive audits to highlight new findings, resolved issues, and configuration drift.
 - List, edit, and remove machines from the audit fleet.
@@ -73,6 +74,7 @@ bash scripts/audit-machine.sh <machine-name>
 - `ssh` and `scp`
 - SSH key-based authentication to every machine you want to audit
 - Optional on the remote machine: Claude Code, used for richer audits when present
+- Optional on the remote machine: `npm`, used for `npm audit --json` on discovered package-lock projects
 
 Password-based SSH prompts are not suitable for automated Codex execution. Set up SSH aliases in `~/.ssh/config` or make the target reachable without interactive prompts.
 
@@ -103,7 +105,7 @@ This data persists across plugin updates. To override storage, set `SECURITY_AUD
 
 ## Audit coverage
 
-The default audit checklist covers seven domains:
+The default audit checklist covers these domains:
 
 1. Antivirus / endpoint protection presence and configuration
 2. Automatic security update status
@@ -111,7 +113,13 @@ The default audit checklist covers seven domains:
 4. File and directory permission posture
 5. User account hygiene: sudo, idle accounts, password policy
 6. Network exposure: firewall, open ports, listening services
-7. Auxiliary hardening: fail2ban, SSH config, and related controls
+7. Application runtime exposure: public dev listeners, debug ports, sensitive service ports, root-owned web runtimes
+8. Node.js dependency exposure: `package.json`/`package-lock.json` inventory and `npm audit` advisories
+9. Suspicious runtime indicators: deleted executables, `/tmp` or `/dev/shm` processes, outbound sessions
+10. Persistence indicators: systemd, cron, and `authorized_keys`
+11. Auxiliary hardening: fail2ban, SSH config, and related controls
+
+The high-signal rules are designed to catch incidents like a public `next dev` or Vite server bound to `0.0.0.0`, especially when it runs as `root` and the project has vulnerable framework advisories. They also flag public database/cache/admin ports such as PostgreSQL, Redis, MongoDB, Elasticsearch, Docker API, and RDP.
 
 The checklist is Linux-shaped. macOS and Windows targets may work with caveats and should be reviewed for false positives.
 
@@ -154,6 +162,13 @@ Audit a machine:
 ```bash
 SECURITY_AUDITOR_DATA_DIR="$DATA_DIR" bash scripts/audit-machine.sh <machine-name> --full
 SECURITY_AUDITOR_DATA_DIR="$DATA_DIR" bash scripts/audit-machine.sh <machine-name> --quick
+```
+
+Tune heavier scans:
+
+```bash
+SECURITY_AUDITOR_MAX_PROJECTS=80 SECURITY_AUDITOR_MAX_NPM_AUDITS=20 \
+  SECURITY_AUDITOR_DATA_DIR="$DATA_DIR" bash scripts/audit-machine.sh <machine-name> --full
 ```
 
 Show the latest saved report without re-auditing:

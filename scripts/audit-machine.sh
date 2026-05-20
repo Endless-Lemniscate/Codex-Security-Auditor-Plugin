@@ -6,6 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REMOTE_COLLECTOR="$SCRIPT_DIR/collect-linux-audit.sh"
 DEFAULT_DATA_DIR="${SECURITY_AUDITOR_DATA_DIR:-${CODEX_USER_DATA:-${CLAUDE_USER_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/codex-plugins}}/security-auditor/data}"
 REPO_BASE="${REPO_BASE:-$DEFAULT_DATA_DIR}"
 MACHINES_DIR="$REPO_BASE/machines"
@@ -194,7 +195,20 @@ Perform a security audit on this machine to ensure security best practices are f
 - [ ] Review running network services
 - [ ] Identify unnecessary services
 
-### 7. Additional Security Tools
+### 7. Application Runtime & Dependency Exposure
+- [ ] Identify public listeners bound to 0.0.0.0, *, or [::]
+- [ ] Flag dev servers such as next dev, Vite, webpack-dev-server, nodemon, or debug ports exposed publicly
+- [ ] Flag web/dev processes running as root
+- [ ] Inventory Node.js web projects and vulnerable package versions
+- [ ] Run package-manager advisory checks where available, especially npm audit for package-lock projects
+
+### 8. Suspicious Runtime & Persistence
+- [ ] Check for processes running from /tmp or /dev/shm
+- [ ] Check for deleted executables still running
+- [ ] Review established outbound connections for possible C2
+- [ ] Review cron, systemd units, and authorized_keys for persistence indicators
+
+### 9. Additional Security Tools
 - [ ] Check for fail2ban or similar intrusion prevention
 - [ ] Review system logs for suspicious activity
 - [ ] Check for security monitoring tools
@@ -207,6 +221,7 @@ For each section, provide:
 3. Recommendations (suggested fixes)
 
 Use clear formatting and highlight any critical issues.
+Treat public dev servers, root-owned web runtimes, vulnerable public web frameworks, deleted executables, and suspicious outbound sessions as high-priority findings.
 EOFTASK
 )
 
@@ -228,91 +243,35 @@ EOFTASK
         # Retrieve report
         scp "$BASH_ALIAS:/tmp/audit-report-$AUDIT_TIMESTAMP.md" "$REPORT_DIR/audit-report.md"
 
+        # Append deterministic evidence so scheduled runs do not depend only on AI interpretation.
+        if [ -f "$REMOTE_COLLECTOR" ]; then
+            {
+                echo ""
+                echo "---"
+                echo ""
+                echo "# Deterministic SSH Evidence"
+            } >> "$REPORT_DIR/audit-report.md"
+            ssh "$BASH_ALIAS" "bash -s -- '$AUDIT_TYPE'" < "$REMOTE_COLLECTOR" >> "$REPORT_DIR/audit-report.md" 2>&1 || {
+                echo "" >> "$REPORT_DIR/audit-report.md"
+                echo "WARNING: deterministic collector failed." >> "$REPORT_DIR/audit-report.md"
+            }
+        else
+            echo "WARNING: collector script not found at $REMOTE_COLLECTOR" >> "$REPORT_DIR/audit-report.md"
+        fi
+
         # Cleanup
         ssh "$BASH_ALIAS" "rm -f $TMP_TASK /tmp/audit-report-$AUDIT_TIMESTAMP.md"
 
         echo -e "${GREEN}✓ Audit completed via Claude Code${NC}"
     else
-        echo -e "${YELLOW}Claude Code not available, running manual audit...${NC}"
+        echo -e "${YELLOW}Claude Code not available, running deterministic SSH audit...${NC}"
 
-        # Run manual audit commands
-        AUDIT_SCRIPT=$(cat << 'EOFSCRIPT'
-#!/bin/bash
+        if [ ! -f "$REMOTE_COLLECTOR" ]; then
+            echo -e "${RED}Collector script not found at $REMOTE_COLLECTOR${NC}"
+            exit 1
+        fi
 
-echo "# Security Audit Report"
-echo "Generated: $(date)"
-echo ""
-
-echo "## 1. Antivirus & Malware Protection"
-if command -v clamav &>/dev/null; then
-    echo "- ClamAV: Installed"
-    systemctl is-active clamav-freshclam &>/dev/null && echo "  Status: Active" || echo "  Status: Inactive"
-else
-    echo "- ClamAV: Not installed"
-fi
-echo ""
-
-echo "## 2. Rootkit Detection"
-if command -v rkhunter &>/dev/null; then
-    echo "- rkhunter: Installed"
-else
-    echo "- rkhunter: Not installed"
-fi
-if command -v chkrootkit &>/dev/null; then
-    echo "- chkrootkit: Installed"
-else
-    echo "- chkrootkit: Not installed"
-fi
-echo ""
-
-echo "## 3. System Updates"
-if command -v apt &>/dev/null; then
-    echo "- Package manager: apt"
-    apt list --upgradable 2>/dev/null | tail -n +2 | head -10
-elif command -v dnf &>/dev/null; then
-    echo "- Package manager: dnf"
-    dnf check-update 2>/dev/null | head -10
-fi
-echo ""
-
-echo "## 4. File Permissions"
-echo "### World-writable files (sample):"
-find / -xdev -type f -perm -0002 2>/dev/null | head -10
-echo ""
-echo "### SUID binaries (sample):"
-find / -xdev -type f -perm -4000 2>/dev/null | head -20
-echo ""
-
-echo "## 5. User Accounts"
-echo "### User accounts:"
-cat /etc/passwd | grep -v nologin | grep -v false
-echo ""
-
-echo "## 6. Network Security"
-echo "### Open ports:"
-ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null
-echo ""
-echo "### Firewall status:"
-if command -v ufw &>/dev/null; then
-    ufw status
-elif command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --list-all
-else
-    echo "No firewall detected"
-fi
-echo ""
-
-echo "## 7. Additional Security"
-if command -v fail2ban-client &>/dev/null; then
-    echo "- fail2ban: Installed"
-    fail2ban-client status 2>/dev/null
-else
-    echo "- fail2ban: Not installed"
-fi
-EOFSCRIPT
-)
-
-        echo "$AUDIT_SCRIPT" | ssh "$BASH_ALIAS" "bash" > "$REPORT_DIR/audit-report.md" 2>&1
+        ssh "$BASH_ALIAS" "bash -s -- '$AUDIT_TYPE'" < "$REMOTE_COLLECTOR" > "$REPORT_DIR/audit-report.md" 2>&1
 
         echo -e "${GREEN}✓ Manual audit completed${NC}"
     fi
